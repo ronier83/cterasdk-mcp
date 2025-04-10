@@ -480,8 +480,59 @@ app.post('/api/proxy', validateToken, async (req, res) => {
   }
 });
 
-// Start server
+// Register MCP Tools for Cursor
+if (process.env.MCP_TOOLS_REGISTRATION === 'true') {
+  const toolSchema = {
+    "name": "CTERA SDK",
+    "description": "CTERA SDK Tools for Cursor",
+    "schema": {
+      "functions": [
+        {
+          "name": "login",
+          "description": "Login to a CTERA portal",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string",
+                "description": "CTERA portal hostname or IP"
+              },
+              "username": {
+                "type": "string",
+                "description": "Username for login"
+              },
+              "password": {
+                "type": "string",
+                "description": "Password for login"
+              }
+            },
+            "required": ["host", "username", "password"]
+          }
+        },
+        {
+          "name": "listTenants",
+          "description": "List tenants in the CTERA portal",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "sessionKey": {
+                "type": "string",
+                "description": "Session key from login"
+              }
+            },
+            "required": ["sessionKey"]
+          }
+        }
+      ]
+    }
+  };
+
+  // Send tool registration to Cursor
+  console.log(`MCP_TOOLS: ${JSON.stringify(toolSchema)}`);
+}
+
+// Start the server
 app.listen(port, '0.0.0.0', () => {
   console.log(`CTERA SDK MCP server listening on port ${port}`);
-  console.log(`API Token: ${process.env.MCP_API_TOKEN || 'Not set - authentication will fail'}`);
+  console.log(`API Token: ${process.env.MCP_API_TOKEN || '<not set>'}`);
 }); 
