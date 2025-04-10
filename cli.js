@@ -17,6 +17,7 @@ program
   .option('-p, --port <port>', 'Port to run on', '5000')
   .action((options) => {
     console.log('Starting CTERA SDK MCP server...');
+    console.log(`Using port: ${options.port}`);
     
     // Set environment variables
     process.env.MCP_API_TOKEN = options.token;
@@ -36,6 +37,8 @@ program
   .option('--port <port>', 'Local server port', '5000')
   .action(async (options) => {
     try {
+      console.log(`Logging in to ${options.host} as ${options.username}...`);
+      
       // Make a POST request to the local server
       const data = JSON.stringify({
         host: options.host,

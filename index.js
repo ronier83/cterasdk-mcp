@@ -76,21 +76,47 @@ const validateToken = (req, res, next) => {
 
 // Helper to create axios instance with appropriate settings
 const createAxiosInstance = (baseURL, jsessionid = null) => {
-  const instance = axios.create({
-    baseURL,
-    httpsAgent: new https.Agent({
-      rejectUnauthorized: false // Similar to -k in curl
-    }),
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded'
+  console.log(`Creating axios instance for ${baseURL}, jsessionid: ${jsessionid || 'none'}`);
+  try {
+    // Make sure we're using port 443 explicitly
+    if (baseURL.indexOf(':443') === -1) {
+      baseURL = baseURL.replace(/^(https:\/\/[^\/:]*)(.*)$/, '$1:443$2');
+      console.log(`Updated baseURL to include port 443: ${baseURL}`);
     }
-  });
-  
-  if (jsessionid) {
-    instance.defaults.headers.common['Cookie'] = `JSESSIONID=${jsessionid}`;
+    
+    const instance = axios.create({
+      baseURL,
+      httpsAgent: new https.Agent({
+        rejectUnauthorized: false // -k in curl
+      }),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      maxRedirects: 5, // --location in curl
+      timeout: 10000
+    });
+    
+    if (jsessionid) {
+      instance.defaults.headers.common['Cookie'] = `JSESSIONID=${jsessionid}`;
+    }
+    
+    // Add request interceptor for debugging
+    instance.interceptors.request.use(
+      config => {
+        console.log(`Making ${config.method.toUpperCase()} request to ${config.baseURL}${config.url}`);
+        return config;
+      },
+      error => {
+        console.error('Request error:', error.message);
+        return Promise.reject(error);
+      }
+    );
+    
+    return instance;
+  } catch (error) {
+    console.error('Error creating axios instance:', error);
+    throw new Error(`Failed to create client: ${error.message}`);
   }
-  
-  return instance;
 };
 
 // Login endpoint
@@ -102,52 +128,90 @@ app.post('/api/login', validateToken, async (req, res) => {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
     
-    const baseURL = `https://${host}`;
-    const client = createAxiosInstance(baseURL);
+    console.log(`Login attempt for ${username}@${host}`);
     
-    const response = await client.post('/admin/api/login', 
-      `j_username=${encodeURIComponent(username)}&j_password=${encodeURIComponent(password)}`,
-      { maxRedirects: 0, validateStatus: status => status < 400 || status === 302 }
-    );
+    // Explicitly include port 443 as in the curl command
+    const baseURL = `https://${host}:443`;
+    console.log(`Using base URL: ${baseURL}`);
     
-    // Extract JSESSIONID from response cookies
-    const cookies = response.headers['set-cookie'];
-    if (!cookies) {
-      return res.status(401).json({ error: 'Authentication failed' });
-    }
+    // Create a client that exactly matches the curl command behavior
+    const client = axios.create({
+      baseURL,
+      httpsAgent: new https.Agent({
+        rejectUnauthorized: false // -k in curl
+      }),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      maxRedirects: 5, // --location in curl
+      timeout: 10000
+    });
     
-    let jsessionid = null;
-    for (const cookie of cookies) {
-      const match = cookie.match(/JSESSIONID=([^;]+)/);
-      if (match) {
-        jsessionid = match[1];
-        break;
+    console.log('Client created successfully');
+    
+    try {
+      console.log('Attempting to authenticate...');
+      // Use data-urlencode format exactly as in curl
+      const formData = `j_username=${encodeURIComponent(username)}&j_password=${encodeURIComponent(password)}`;
+      console.log(`POST to /admin/api/login with form data: j_username=${username}&j_password=***`);
+      
+      const response = await client.post('/admin/api/login', formData);
+      console.log(`Authentication response status: ${response.status}`);
+      
+      // Extract JSESSIONID from response cookies
+      const cookies = response.headers['set-cookie'];
+      if (!cookies) {
+        console.log('No cookies returned in response');
+        return res.status(401).json({ error: 'Authentication failed - no cookies' });
       }
+      
+      console.log('Response cookies:', cookies);
+      
+      let jsessionid = null;
+      for (const cookie of cookies) {
+        const match = cookie.match(/JSESSIONID=([^;]+)/);
+        if (match) {
+          jsessionid = match[1];
+          console.log(`Found JSESSIONID: ${jsessionid}`);
+          break;
+        }
+      }
+      
+      if (!jsessionid) {
+        console.log('No JSESSIONID found in cookies');
+        return res.status(401).json({ error: 'Authentication failed - no JSESSIONID' });
+      }
+      
+      // Generate a session key
+      const sessionKey = Math.random().toString(36).substring(2, 15) + 
+                        Math.random().toString(36).substring(2, 15);
+      
+      // Store session information
+      sessions.set(sessionKey, {
+        host,
+        jsessionid,
+        username,
+        createdAt: new Date()
+      });
+      
+      // After successful login and storing the session
+      saveSessions(); // Save immediately after login
+      console.log(`Login successful for ${username}@${host}, session created: ${sessionKey}`);
+      
+      return res.status(200).json({
+        sessionKey,
+        message: 'Login successful'
+      });
+    } catch (authError) {
+      console.error('Authentication error details:', authError.message);
+      if (authError.response) {
+        console.error('Auth Error Response:', {
+          status: authError.response.status,
+          statusText: authError.response.statusText
+        });
+      }
+      throw authError;
     }
-    
-    if (!jsessionid) {
-      return res.status(401).json({ error: 'Authentication failed' });
-    }
-    
-    // Generate a session key
-    const sessionKey = Math.random().toString(36).substring(2, 15) + 
-                      Math.random().toString(36).substring(2, 15);
-    
-    // Store session information
-    sessions.set(sessionKey, {
-      host,
-      jsessionid,
-      username,
-      createdAt: new Date()
-    });
-    
-    // After successful login and storing the session
-    saveSessions(); // Save immediately after login
-    
-    return res.status(200).json({
-      sessionKey,
-      message: 'Login successful'
-    });
   } catch (error) {
     console.error('Login error:', error.message);
     return res.status(500).json({
