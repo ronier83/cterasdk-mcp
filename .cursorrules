@@ -1,0 +1,40 @@
+{
+  "mcp": {
+    "server": {
+      "command": "/usr/local/bin/npx",
+      "args": ["-y", "github:ronier83/cterasdk-mcp", "start", "--token", "default_token", "--port", "5001"],
+      "enabled": true
+    },
+    "repository": "github:ronier83/cterasdk-mcp"
+  },
+  "exclude": [
+    "*.tgz",
+    "sessions.json",
+    "node_modules/",
+    "cursor-ctera-extension/",
+    ".env",
+    ".vscode/",
+    ".idea/"
+  ],
+  "apiEndpoints": [
+    { "path": "/api/login", "method": "POST", "requiresToken": true },
+    { "path": "/api/browse-global", "method": "POST", "requiresToken": true, "requiresSession": true },
+    { "path": "/api/list-tenants", "method": "POST", "requiresToken": true, "requiresSession": true },
+    { "path": "/api/sessions", "method": "GET", "requiresToken": true },
+    { "path": "/api/logout", "method": "POST", "requiresToken": true, "requiresSession": true },
+    { "path": "/api/session/:sessionKey", "method": "GET", "requiresToken": true },
+    { "path": "/api/proxy", "method": "POST", "requiresToken": true, "requiresSession": true },
+    { "path": "/api/health", "method": "GET", "requiresToken": true }
+  ],
+  "testing": {
+    "restartCursorAfterConfigChanges": true,
+    "requiredTests": ["login", "listTenants"]
+  },
+  "rules": [
+    "Always use GitHub repository reference",
+    "Never use local file paths in configuration",
+    "Do not use @ prefix when referencing repository",
+    "Maintain port 5001 consistency",
+    "Clean working directory before commits"
+  ]
+} 
