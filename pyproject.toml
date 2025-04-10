@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cterasdk-mcp"
+version = "0.1.0"
+description = "MCP agent for CTERA SDK"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {text = "MIT"}
+dependencies = [
+    "cterasdk",
+    "flask>=2.0.0",
+    "gunicorn>=20.0.0",
+]
+
+[project.scripts]
+cterasdk-mcp = "cterasdk_mcp.cli:main"
+cterasdk-mcp-agent = "cterasdk_mcp.agent:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "isort",
+    "flake8",
+] 
