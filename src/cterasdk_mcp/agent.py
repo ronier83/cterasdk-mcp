@@ -14,13 +14,33 @@ logger = logging.getLogger("cterasdk_mcp.agent")
 
 app = Flask(__name__)
 
-# Basic authentication middleware (this would be replaced with a more robust authentication in production)
+# Command registry - makes it easy to add new commands
+COMMANDS = {
+    "cterasdk_login_test": {
+        "function": core.login_test,
+        "required_params": ["host", "username", "password"],
+        "optional_params": {
+            "client_type": "global_admin",
+            "ssl_verify": False
+        },
+        "description": "Test login to CTERA server"
+    },
+    "cterasdk_list_tenants": {
+        "function": core.list_tenants,
+        "required_params": ["host", "username", "password"],
+        "optional_params": {
+            "ssl_verify": False
+        },
+        "description": "List all tenants in the Global Admin portal"
+    }
+}
+
+# Basic authentication middleware
 def authenticate(req):
     auth_header = req.headers.get('Authorization')
     if not auth_header or not auth_header.startswith('Bearer '):
         return False
     token = auth_header.split('Bearer ')[1]
-    # In a real implementation, this would validate against a proper token store
     return token == os.environ.get('MCP_API_TOKEN', 'default-token')
 
 @app.route('/api/v1/tools', methods=['GET'])
@@ -29,77 +49,53 @@ def get_tools():
     if not authenticate(request):
         return jsonify({"error": "Unauthorized"}), 401
 
-    tools = [
-        {
-            "name": "cterasdk_login",
-            "description": "Login to CTERA server",
+    tools = []
+    for name, info in COMMANDS.items():
+        tool = {
+            "name": name,
+            "description": info["description"],
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "host": {
-                        "type": "string",
-                        "description": "Hostname or IP of CTERA server"
-                    },
-                    "username": {
-                        "type": "string",
-                        "description": "Username for login"
-                    },
-                    "password": {
-                        "type": "string",
-                        "description": "Password for login"
-                    },
-                    "client_type": {
-                        "type": "string",
-                        "enum": ["global_admin", "services_portal", "edge"],
-                        "description": "Type of client to use",
-                        "default": "global_admin"
-                    },
-                    "ssl_verify": {
-                        "type": "boolean",
-                        "description": "Verify SSL certificates",
-                        "default": False
-                    }
-                },
-                "required": ["host", "username", "password"]
-            }
-        },
-        {
-            "name": "cterasdk_logout",
-            "description": "Logout from CTERA server",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "session_key": {
-                        "type": "string",
-                        "description": "Session key to logout"
-                    }
-                },
-                "required": ["session_key"]
-            }
-        },
-        {
-            "name": "cterasdk_list_sessions",
-            "description": "List all active sessions",
-            "parameters": {
-                "type": "object",
-                "properties": {}
-            }
-        },
-        {
-            "name": "cterasdk_list_tenants",
-            "description": "List all tenants in the Global Admin portal",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "session_key": {
-                        "type": "string",
-                        "description": "Session key to use (must be a GlobalAdmin session)"
-                    }
-                },
-                "required": ["session_key"]
+                "properties": {},
+                "required": info["required_params"]
             }
         }
-    ]
+        
+        # Add required parameters
+        for param in info["required_params"]:
+            if param == "host":
+                tool["parameters"]["properties"]["host"] = {
+                    "type": "string",
+                    "description": "Hostname or IP of CTERA server"
+                }
+            elif param == "username":
+                tool["parameters"]["properties"]["username"] = {
+                    "type": "string",
+                    "description": "Username for login"
+                }
+            elif param == "password":
+                tool["parameters"]["properties"]["password"] = {
+                    "type": "string",
+                    "description": "Password for login"
+                }
+        
+        # Add optional parameters
+        for param, default in info["optional_params"].items():
+            if param == "client_type":
+                tool["parameters"]["properties"]["client_type"] = {
+                    "type": "string",
+                    "enum": ["global_admin", "services_portal", "edge"],
+                    "description": "Type of client to use",
+                    "default": default
+                }
+            elif param == "ssl_verify":
+                tool["parameters"]["properties"]["ssl_verify"] = {
+                    "type": "boolean",
+                    "description": "Verify SSL certificates",
+                    "default": default
+                }
+        
+        tools.append(tool)
     
     return jsonify(tools)
 
@@ -119,43 +115,27 @@ def run_tool():
     if not tool_name:
         return jsonify({"error": "Missing tool name"}), 400
     
+    if tool_name not in COMMANDS:
+        return jsonify({"error": f"Unknown tool: {tool_name}"}), 404
+    
     try:
-        result = None
+        command = COMMANDS[tool_name]
+        function = command["function"]
+        required_params = command["required_params"]
+        optional_params = command["optional_params"]
         
-        if tool_name == "cterasdk_login":
-            host = params.get('host')
-            username = params.get('username')
-            password = params.get('password')
-            client_type = params.get('client_type', 'global_admin')
-            ssl_verify = params.get('ssl_verify', False)
-            
-            if not host or not username or not password:
-                return jsonify({"error": "Missing required parameters"}), 400
-            
-            result = core.login(host, username, password, client_type, ssl_verify)
+        # Check required parameters
+        for param in required_params:
+            if param not in params:
+                return jsonify({"error": f"Missing required parameter: {param}"}), 400
         
-        elif tool_name == "cterasdk_logout":
-            session_key = params.get('session_key')
-            
-            if not session_key:
-                return jsonify({"error": "Missing required parameters"}), 400
-            
-            result = core.logout(session_key)
+        # Add default values for optional parameters if not provided
+        for param, default in optional_params.items():
+            if param not in params:
+                params[param] = default
         
-        elif tool_name == "cterasdk_list_sessions":
-            result = core.list_sessions()
-            
-        elif tool_name == "cterasdk_list_tenants":
-            session_key = params.get('session_key')
-            
-            if not session_key:
-                return jsonify({"error": "Missing required parameters"}), 400
-            
-            result = core.list_tenants(session_key)
-        
-        else:
-            return jsonify({"error": f"Unknown tool: {tool_name}"}), 404
-        
+        # Execute the function with parameters
+        result = function(**params)
         return jsonify(result)
     
     except Exception as e:

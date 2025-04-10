@@ -91,6 +91,73 @@ mcps:
 git clone https://github.com/yourusername/cterasdk-mcp.git
 cd cterasdk-mcp
 
+# Create and activate virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
 # Install development dependencies
 pip install -e ".[dev]"
-``` 
+```
+
+### Adding New Commands
+
+To add a new command to the API, follow these steps:
+
+1. Add a new function in `src/cterasdk_mcp/core.py`:
+
+```python
+def your_new_command(host: str, username: str, password: str, arg1: str, arg2: bool = False) -> Dict[str, Any]:
+    """
+    Description of your new command
+    
+    Args:
+        host: The hostname or IP of the CTERA server
+        username: The username to authenticate with
+        password: The password to authenticate with
+        arg1: Description of arg1
+        arg2: Description of arg2
+        
+    Returns:
+        Dictionary with result data
+    """
+    try:
+        with get_client(host, username, password, 'global_admin', not arg2) as client:
+            # Your command implementation here
+            result = client.some_operation(arg1)
+            
+            return {
+                "success": True,
+                "data": result
+            }
+    
+    except Exception as e:
+        logger.error(f"Command failed: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+```
+
+2. Update the `__init__.py` to expose your new function:
+
+```python
+from .core import login_test, list_tenants, your_new_command
+```
+
+3. Register your command in the `COMMANDS` registry in `src/cterasdk_mcp/agent.py`:
+
+```python
+COMMANDS = {
+    # ... existing commands ...
+    "cterasdk_your_command": {
+        "function": core.your_new_command,
+        "required_params": ["host", "username", "password", "arg1"],
+        "optional_params": {
+            "arg2": False,
+        },
+        "description": "Description of your new command"
+    }
+}
+```
+
+That's it! Your new command will be automatically added to the API documentation and will be accessible via the `/api/v1/run` endpoint. 

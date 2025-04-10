@@ -1,5 +1,6 @@
-"""CTERA SDK MCP Agent."""
+#!/usr/bin/env python3
+"""CTERA SDK MCP - API Agent for CTERA SDK"""
 
-from .core import login, logout, list_sessions, list_tenants, restore_session
+from .core import login_test, list_tenants
 
-__all__ = ["login", "logout", "list_sessions", "list_tenants", "restore_session"] 
+__all__ = ["login_test", "list_tenants"] 
