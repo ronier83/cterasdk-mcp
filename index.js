@@ -480,6 +480,233 @@ app.post('/api/proxy', validateToken, async (req, res) => {
   }
 });
 
+// MCP protocol endpoint
+app.post('/mcp', validateToken, async (req, res) => {
+  try {
+    const { name, parameters } = req.body;
+    
+    console.log(`MCP call: ${name} with parameters:`, parameters);
+    
+    if (name === 'login') {
+      const { host, username, password } = parameters;
+      
+      if (!host || !username || !password) {
+        return res.status(400).json({ error: 'Missing required parameters' });
+      }
+      
+      // Create a client
+      const baseURL = `https://${host}:443`;
+      const client = axios.create({
+        baseURL,
+        httpsAgent: new https.Agent({
+          rejectUnauthorized: false // -k in curl
+        }),
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        maxRedirects: 5,
+        timeout: 10000
+      });
+      
+      // Login
+      try {
+        const formData = `j_username=${encodeURIComponent(username)}&j_password=${encodeURIComponent(password)}`;
+        const response = await client.post('/admin/api/login', formData);
+        
+        // Extract JSESSIONID from response cookies
+        const cookies = response.headers['set-cookie'];
+        if (!cookies) {
+          return res.status(200).json({ 
+            error: true,
+            message: 'Authentication failed - no cookies' 
+          });
+        }
+        
+        let jsessionid = null;
+        for (const cookie of cookies) {
+          const match = cookie.match(/JSESSIONID=([^;]+)/);
+          if (match) {
+            jsessionid = match[1];
+            break;
+          }
+        }
+        
+        if (!jsessionid) {
+          return res.status(200).json({ 
+            error: true,
+            message: 'Authentication failed - no JSESSIONID' 
+          });
+        }
+        
+        // Generate a session key
+        const sessionKey = Math.random().toString(36).substring(2, 15) + 
+                          Math.random().toString(36).substring(2, 15);
+        
+        // Store session information
+        sessions.set(sessionKey, {
+          host,
+          jsessionid,
+          username,
+          createdAt: new Date()
+        });
+        
+        // Save sessions
+        saveSessions();
+        
+        return res.status(200).json({
+          sessionKey,
+          message: 'Login successful'
+        });
+      } catch (error) {
+        return res.status(200).json({
+          error: true,
+          message: `Login failed: ${error.message}`
+        });
+      }
+    } else if (name === 'listTenants') {
+      const { sessionKey } = parameters;
+      
+      if (!sessionKey || !sessions.has(sessionKey)) {
+        return res.status(200).json({ 
+          error: true,
+          message: 'Invalid or expired session' 
+        });
+      }
+      
+      const session = sessions.get(sessionKey);
+      const baseURL = `https://${session.host}`;
+      const client = createAxiosInstance(baseURL, session.jsessionid);
+      
+      try {
+        // Browse to Global Admin
+        await client.put('/admin/api/currentPortal', 
+          '<val></val>',
+          { headers: { 'Content-Type': 'application/xml' } }
+        );
+        
+        // List tenants
+        const xmlData = `<obj>
+          <att id="type">
+              <val>db</val>
+          </att>
+          <att id="name">
+              <val>query</val>
+          </att>
+          <att id="param">
+              <obj>
+                  <att id="startFrom">
+                      <val>0</val>
+                  </att>
+                  <att id="countLimit">
+                      <val>50</val>
+                  </att>
+                  <att id="include">
+                      <list>
+                          <val>name</val>
+                      </list>
+                  </att>
+              </obj>
+          </att>
+        </obj>`;
+        
+        const response = await client.post('/admin/api/portals',
+          xmlData,
+          { headers: { 'Content-Type': 'text/plain' } }
+        );
+        
+        // Parse XML response
+        const result = await parseStringPromise(response.data);
+        
+        // Extract tenant names
+        const tenants = [];
+        if (result && result.obj && result.obj.att) {
+          const objectsAtt = result.obj.att.find(att => att.$ && att.$.id === 'objects');
+          
+          if (objectsAtt && objectsAtt.list && objectsAtt.list[0] && objectsAtt.list[0].obj) {
+            const tenantObjects = objectsAtt.list[0].obj;
+            
+            for (const tenantObj of tenantObjects) {
+              if (tenantObj.att) {
+                const nameAtt = tenantObj.att.find(att => att.$ && att.$.id === 'name');
+                if (nameAtt && nameAtt.val && nameAtt.val[0]) {
+                  tenants.push(nameAtt.val[0]);
+                }
+              }
+            }
+          }
+        }
+        
+        return res.status(200).json({
+          tenants,
+          count: tenants.length
+        });
+      } catch (error) {
+        return res.status(200).json({
+          error: true,
+          message: `Failed to list tenants: ${error.message}`
+        });
+      }
+    } else {
+      return res.status(400).json({
+        error: true,
+        message: `Unknown function: ${name}`
+      });
+    }
+  } catch (error) {
+    console.error('MCP error:', error.message);
+    return res.status(500).json({
+      error: true,
+      message: error.message
+    });
+  }
+});
+
+// Standard MCP tools schema endpoint
+app.get('/mcp', (req, res) => {
+  const schema = {
+    functions: [
+      {
+        name: "login",
+        description: "Login to a CTERA portal",
+        parameters: {
+          type: "object",
+          properties: {
+            host: {
+              type: "string",
+              description: "CTERA portal hostname or IP"
+            },
+            username: {
+              type: "string",
+              description: "Username for login"
+            },
+            password: {
+              type: "string",
+              description: "Password for login"
+            }
+          },
+          required: ["host", "username", "password"]
+        }
+      },
+      {
+        name: "listTenants",
+        description: "List tenants in the CTERA portal",
+        parameters: {
+          type: "object",
+          properties: {
+            sessionKey: {
+              type: "string",
+              description: "Session key from login"
+            }
+          },
+          required: ["sessionKey"]
+        }
+      }
+    ]
+  };
+  
+  res.json(schema);
+});
+
 // Register MCP Tools for Cursor
 if (process.env.MCP_TOOLS_REGISTRATION === 'true') {
   const toolSchema = {
