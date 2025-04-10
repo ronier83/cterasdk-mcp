@@ -527,12 +527,18 @@ if (process.env.MCP_TOOLS_REGISTRATION === 'true') {
     }
   };
 
-  // Send tool registration to Cursor
-  console.log(`MCP_TOOLS: ${JSON.stringify(toolSchema)}`);
+  // Create a dedicated endpoint for tools registration that Cursor can query
+  app.get('/mcp-tools-schema', (req, res) => {
+    res.json(toolSchema);
+  });
+  
+  // Still log for backward compatibility
+  console.log('MCP tools registration enabled');
 }
 
 // Start the server
 app.listen(port, '0.0.0.0', () => {
+  // Only output plain text logs without trying to format as JSON
   console.log(`CTERA SDK MCP server listening on port ${port}`);
   console.log(`API Token: ${process.env.MCP_API_TOKEN || '<not set>'}`);
 }); 
