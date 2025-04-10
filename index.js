@@ -78,12 +78,7 @@ const validateToken = (req, res, next) => {
 const createAxiosInstance = (baseURL, jsessionid = null) => {
   console.log(`Creating axios instance for ${baseURL}, jsessionid: ${jsessionid || 'none'}`);
   try {
-    // Make sure we're using port 443 explicitly
-    if (baseURL.indexOf(':443') === -1) {
-      baseURL = baseURL.replace(/^(https:\/\/[^\/:]*)(.*)$/, '$1:443$2');
-      console.log(`Updated baseURL to include port 443: ${baseURL}`);
-    }
-    
+    // Don't force port 443, use the URL as provided
     const instance = axios.create({
       baseURL,
       httpsAgent: new https.Agent({
@@ -130,8 +125,8 @@ app.post('/api/login', validateToken, async (req, res) => {
     
     console.log(`Login attempt for ${username}@${host}`);
     
-    // Explicitly include port 443 as in the curl command
-    const baseURL = `https://${host}:443`;
+    // Remove explicit port 443 to match curl command format
+    const baseURL = `https://${host}`;
     console.log(`Using base URL: ${baseURL}`);
     
     // Create a client that exactly matches the curl command behavior
