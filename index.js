@@ -480,189 +480,197 @@ app.post('/api/proxy', validateToken, async (req, res) => {
   }
 });
 
-// MCP protocol endpoint
-app.post('/mcp', validateToken, async (req, res) => {
-  try {
-    const { name, parameters } = req.body;
-    
-    console.log(`MCP call: ${name} with parameters:`, parameters);
-    
-    if (name === 'login') {
-      const { host, username, password } = parameters;
+// MCP protocol endpoint with debugging
+app.post('/mcp', (req, res) => {
+  console.log('MCP POST endpoint hit with body:', JSON.stringify(req.body));
+  console.log('MCP POST headers:', JSON.stringify(req.headers));
+  
+  // Continue with existing code
+  validateToken(req, res, async () => {
+    try {
+      const { name, parameters } = req.body;
       
-      if (!host || !username || !password) {
-        return res.status(400).json({ error: 'Missing required parameters' });
-      }
+      console.log(`MCP call: ${name} with parameters:`, parameters);
       
-      // Create a client
-      const baseURL = `https://${host}:443`;
-      const client = axios.create({
-        baseURL,
-        httpsAgent: new https.Agent({
-          rejectUnauthorized: false // -k in curl
-        }),
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        maxRedirects: 5,
-        timeout: 10000
-      });
-      
-      // Login
-      try {
-        const formData = `j_username=${encodeURIComponent(username)}&j_password=${encodeURIComponent(password)}`;
-        const response = await client.post('/admin/api/login', formData);
+      if (name === 'login') {
+        const { host, username, password } = parameters;
         
-        // Extract JSESSIONID from response cookies
-        const cookies = response.headers['set-cookie'];
-        if (!cookies) {
-          return res.status(200).json({ 
-            error: true,
-            message: 'Authentication failed - no cookies' 
-          });
+        if (!host || !username || !password) {
+          return res.status(400).json({ error: 'Missing required parameters' });
         }
         
-        let jsessionid = null;
-        for (const cookie of cookies) {
-          const match = cookie.match(/JSESSIONID=([^;]+)/);
-          if (match) {
-            jsessionid = match[1];
-            break;
-          }
-        }
-        
-        if (!jsessionid) {
-          return res.status(200).json({ 
-            error: true,
-            message: 'Authentication failed - no JSESSIONID' 
-          });
-        }
-        
-        // Generate a session key
-        const sessionKey = Math.random().toString(36).substring(2, 15) + 
-                          Math.random().toString(36).substring(2, 15);
-        
-        // Store session information
-        sessions.set(sessionKey, {
-          host,
-          jsessionid,
-          username,
-          createdAt: new Date()
+        // Create a client
+        const baseURL = `https://${host}:443`;
+        const client = axios.create({
+          baseURL,
+          httpsAgent: new https.Agent({
+            rejectUnauthorized: false // -k in curl
+          }),
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          maxRedirects: 5,
+          timeout: 10000
         });
         
-        // Save sessions
-        saveSessions();
-        
-        return res.status(200).json({
-          sessionKey,
-          message: 'Login successful'
-        });
-      } catch (error) {
-        return res.status(200).json({
-          error: true,
-          message: `Login failed: ${error.message}`
-        });
-      }
-    } else if (name === 'listTenants') {
-      const { sessionKey } = parameters;
-      
-      if (!sessionKey || !sessions.has(sessionKey)) {
-        return res.status(200).json({ 
-          error: true,
-          message: 'Invalid or expired session' 
-        });
-      }
-      
-      const session = sessions.get(sessionKey);
-      const baseURL = `https://${session.host}`;
-      const client = createAxiosInstance(baseURL, session.jsessionid);
-      
-      try {
-        // Browse to Global Admin
-        await client.put('/admin/api/currentPortal', 
-          '<val></val>',
-          { headers: { 'Content-Type': 'application/xml' } }
-        );
-        
-        // List tenants
-        const xmlData = `<obj>
-          <att id="type">
-              <val>db</val>
-          </att>
-          <att id="name">
-              <val>query</val>
-          </att>
-          <att id="param">
-              <obj>
-                  <att id="startFrom">
-                      <val>0</val>
-                  </att>
-                  <att id="countLimit">
-                      <val>50</val>
-                  </att>
-                  <att id="include">
-                      <list>
-                          <val>name</val>
-                      </list>
-                  </att>
-              </obj>
-          </att>
-        </obj>`;
-        
-        const response = await client.post('/admin/api/portals',
-          xmlData,
-          { headers: { 'Content-Type': 'text/plain' } }
-        );
-        
-        // Parse XML response
-        const result = await parseStringPromise(response.data);
-        
-        // Extract tenant names
-        const tenants = [];
-        if (result && result.obj && result.obj.att) {
-          const objectsAtt = result.obj.att.find(att => att.$ && att.$.id === 'objects');
+        // Login
+        try {
+          const formData = `j_username=${encodeURIComponent(username)}&j_password=${encodeURIComponent(password)}`;
+          const response = await client.post('/admin/api/login', formData);
           
-          if (objectsAtt && objectsAtt.list && objectsAtt.list[0] && objectsAtt.list[0].obj) {
-            const tenantObjects = objectsAtt.list[0].obj;
+          // Extract JSESSIONID from response cookies
+          const cookies = response.headers['set-cookie'];
+          if (!cookies) {
+            return res.status(200).json({ 
+              error: true,
+              message: 'Authentication failed - no cookies' 
+            });
+          }
+          
+          let jsessionid = null;
+          for (const cookie of cookies) {
+            const match = cookie.match(/JSESSIONID=([^;]+)/);
+            if (match) {
+              jsessionid = match[1];
+              break;
+            }
+          }
+          
+          if (!jsessionid) {
+            return res.status(200).json({ 
+              error: true,
+              message: 'Authentication failed - no JSESSIONID' 
+            });
+          }
+          
+          // Generate a session key
+          const sessionKey = Math.random().toString(36).substring(2, 15) + 
+                            Math.random().toString(36).substring(2, 15);
+          
+          // Store session information
+          sessions.set(sessionKey, {
+            host,
+            jsessionid,
+            username,
+            createdAt: new Date()
+          });
+          
+          // Save sessions
+          saveSessions();
+          
+          return res.status(200).json({
+            sessionKey,
+            message: 'Login successful'
+          });
+        } catch (error) {
+          return res.status(200).json({
+            error: true,
+            message: `Login failed: ${error.message}`
+          });
+        }
+      } else if (name === 'listTenants') {
+        const { sessionKey } = parameters;
+        
+        if (!sessionKey || !sessions.has(sessionKey)) {
+          return res.status(200).json({ 
+            error: true,
+            message: 'Invalid or expired session' 
+          });
+        }
+        
+        const session = sessions.get(sessionKey);
+        const baseURL = `https://${session.host}`;
+        const client = createAxiosInstance(baseURL, session.jsessionid);
+        
+        try {
+          // Browse to Global Admin
+          await client.put('/admin/api/currentPortal', 
+            '<val></val>',
+            { headers: { 'Content-Type': 'application/xml' } }
+          );
+          
+          // List tenants
+          const xmlData = `<obj>
+            <att id="type">
+                <val>db</val>
+            </att>
+            <att id="name">
+                <val>query</val>
+            </att>
+            <att id="param">
+                <obj>
+                    <att id="startFrom">
+                        <val>0</val>
+                    </att>
+                    <att id="countLimit">
+                        <val>50</val>
+                    </att>
+                    <att id="include">
+                        <list>
+                            <val>name</val>
+                        </list>
+                    </att>
+                </obj>
+            </att>
+          </obj>`;
+          
+          const response = await client.post('/admin/api/portals',
+            xmlData,
+            { headers: { 'Content-Type': 'text/plain' } }
+          );
+          
+          // Parse XML response
+          const result = await parseStringPromise(response.data);
+          
+          // Extract tenant names
+          const tenants = [];
+          if (result && result.obj && result.obj.att) {
+            const objectsAtt = result.obj.att.find(att => att.$ && att.$.id === 'objects');
             
-            for (const tenantObj of tenantObjects) {
-              if (tenantObj.att) {
-                const nameAtt = tenantObj.att.find(att => att.$ && att.$.id === 'name');
-                if (nameAtt && nameAtt.val && nameAtt.val[0]) {
-                  tenants.push(nameAtt.val[0]);
+            if (objectsAtt && objectsAtt.list && objectsAtt.list[0] && objectsAtt.list[0].obj) {
+              const tenantObjects = objectsAtt.list[0].obj;
+              
+              for (const tenantObj of tenantObjects) {
+                if (tenantObj.att) {
+                  const nameAtt = tenantObj.att.find(att => att.$ && att.$.id === 'name');
+                  if (nameAtt && nameAtt.val && nameAtt.val[0]) {
+                    tenants.push(nameAtt.val[0]);
+                  }
                 }
               }
             }
           }
+          
+          return res.status(200).json({
+            tenants,
+            count: tenants.length
+          });
+        } catch (error) {
+          return res.status(200).json({
+            error: true,
+            message: `Failed to list tenants: ${error.message}`
+          });
         }
-        
-        return res.status(200).json({
-          tenants,
-          count: tenants.length
-        });
-      } catch (error) {
-        return res.status(200).json({
+      } else {
+        return res.status(400).json({
           error: true,
-          message: `Failed to list tenants: ${error.message}`
+          message: `Unknown function: ${name}`
         });
       }
-    } else {
-      return res.status(400).json({
+    } catch (error) {
+      console.error('MCP error:', error.message);
+      return res.status(500).json({
         error: true,
-        message: `Unknown function: ${name}`
+        message: error.message
       });
     }
-  } catch (error) {
-    console.error('MCP error:', error.message);
-    return res.status(500).json({
-      error: true,
-      message: error.message
-    });
-  }
+  });
 });
 
-// Standard MCP tools schema endpoint
+// Standard MCP tools schema endpoint with debugging
 app.get('/mcp', (req, res) => {
+  console.log('MCP GET endpoint hit with headers:', JSON.stringify(req.headers));
+  
   const schema = {
     functions: [
       {
@@ -704,6 +712,7 @@ app.get('/mcp', (req, res) => {
     ]
   };
   
+  console.log('Returning MCP schema:', JSON.stringify(schema));
   res.json(schema);
 });
 
