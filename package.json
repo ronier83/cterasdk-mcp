@@ -7,8 +7,22 @@
     "cterasdk-mcp": "./cli.js"
   },
   "scripts": {
-    "start": "node index.js"
+    "start": "node cli.js start",
+    "prepublishOnly": "npm test",
+    "test": "echo \"Warning: no test specified\" && exit 0"
   },
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ronier83/cterasdk-mcp.git"
+  },
+  "keywords": [
+    "ctera",
+    "sdk",
+    "api",
+    "mcp"
+  ],
   "dependencies": {
     "axios": "^1.6.2",
     "commander": "^11.0.0",
